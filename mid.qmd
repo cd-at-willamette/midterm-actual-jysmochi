@@ -176,7 +176,7 @@ fit = train(chevda ~ .,
 print(confusionMatrix(predict(fit, test),factor(test$chevda)))
 ```
 
-> Here, I chose to use $K$-NN since I cannot assume variables such as cylinders, horsepower, and acceleration are independent, which is a necessary assumption for the use of Naive Bayes. The Kappa value found here was -0.0244, which indicates that this model is worse than random guessing and should be deleted from the system.
+> Here, I chose to use $K$-NN since I cannot assume variables such as cylinders and horsepower are independent, which is a necessary assumption for the use of Naive Bayes. The Kappa value found here was -0.0244, which indicates that this model is worse than random guessing and should be deleted from the system.
 
 # Binary Classification
 
