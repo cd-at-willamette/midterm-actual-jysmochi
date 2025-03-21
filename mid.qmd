@@ -1,23 +1,20 @@
 ---
 title: "Characterizing Automobiles"
-author: "Your Name Here"
+author: "Jeffrey Smith"
 date: "03/17/2025"
 
 format: 
   html:  # You will quite likely want to change all but the last one, to taste
-    theme:
-        light: flatly
-        dark: darkly
+    theme: superhero
     mainfont: monospace
     highlight-style: github
     title-block-banner: true
     embed-resources: true
-
 ---
 
 # Setup
 
-- Setup
+-   Setup
 
 ```{r libs}
 sh <- suppressPackageStartupMessages
@@ -26,17 +23,23 @@ sh(library(caret))
 sh(library(fastDummies))
 sh(library(class))
 sh(library(ISLR)) # for the "Auto" dataframe
+sh(library(tidytext))
+sh(library(moderndive))
+sh(library(thematic))
+sh(library(pROC))
+sh(library(scales))
+thematic_rmd(bg = "#111", fg = "#eee", accent = "#eee")
 ```
 
 # Dataframe
 
-- We use the `Auto` dataframe.
+-   We use the `Auto` dataframe.
 
 ```{r df}
 head(Auto)
 ```
 
-- It has the following variable names, which describe various attributes of automobiles.
+-   It has the following variable names, which describe various attributes of automobiles.
 
 ```{r df2}
 names(Auto)
@@ -44,75 +47,225 @@ names(Auto)
 
 # Multiple Regression
 
-- Run a linear regression model with `mpg` as the dependent variable and `horsepower` and `year` as features (variables).
-- Compute and comment on the RMSE.
+-   Run a linear regression model with `mpg` as the dependent variable and `horsepower` and `year` as features (variables).
+-   Compute and comment on the RMSE.
 
 ```{r regression}
-# Your code here
+m1 = lm(mpg ~ horsepower + year, data = Auto)
+
+get_regression_points(m1) %>%
+  drop_na(residual) %>%
+  mutate(sq_residuals = residual^2) %>%
+  summarise(rmse = sqrt(mean(sq_residuals))) %>%
+  pluck("rmse")
+
+hist(Auto$mpg)
+var(Auto$mpg)
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: *Explain*
+> The RMSE here was calculated to be 4.3715. Since the RMSE is in the same units as the response variable, and can simply be interpreted as the average absolute error, this RMSE is not that bad. Considering the fact that the range of the response `mpg` variable is 37.6 and that the spread of the data is decent with a sample variance of 60.9181, having an RMSE of 4.3715 is not bad.
 
 # Feature Engineering
 
-- Create 10 features based on the `name` column.
-- Remove all rows with a missing value.
-- Ensure only `mpg` and the engineered features remain.
-- Compute and comment on the RMSE.
+-   Create 10 features based on the `name` column.
+-   Remove all rows with a missing value.
+-   Ensure only `mpg` and the engineered features remain.
+-   Compute and comment on the RMSE.
 
 ```{r features}
-# Your code here
+wordshehe = Auto %>% 
+  mutate(name = as.character(name)) %>%
+  unnest_tokens(word, name) %>% 
+  anti_join(stop_words) %>% 
+  filter(str_detect(string = word, pattern = "[a-z+]")) %>%  # get rid weird non alphas
+  filter(str_length(word)>3) %>%  # get rid of strings shorter than 3 characters
+  group_by(word) %>% 
+  summarise(total=n()) %>%
+  arrange(desc(total))
+
+mycar = Auto %>%
+  mutate(name = tolower(name)) %>%
+  mutate(vw = str_detect(name, c("vw|volkswagen")),
+         plymouth = str_detect(name, "plymouth"),
+         chevrolet = str_detect(name, c("chevy|chevrolet")),
+         ford = str_detect(name, "ford"),
+         honda = str_detect(name, "honda"),
+         buick = str_detect(name, "buick"),
+         pontiac = str_detect(name, "pontiac"),
+         dodge = str_detect(name, "dodge"),
+         toyota = str_detect(name, "toyota"),
+         datsun = str_detect(name, "datsun")) %>%
+  drop_na() %>%
+  select(mpg, vw, plymouth, chevrolet, ford, honda, buick, pontiac, dodge, toyota, datsun)
+
+m2 = lm(mpg ~., data = mycar)
+
+get_regression_points(m2) %>%
+  drop_na(residual) %>%
+  mutate(sq_residuals = residual^2) %>%
+  summarise(rmse = sqrt(mean(sq_residuals))) %>%
+  pluck("rmse")
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: *Explain*
+> The RMSE for this second model is 6.6012, which is higher than the RMSE for the first model, indicating this model built purely off of engineered features from the `names` column is worse at predicting `mpg`.
 
 # Classification
 
-- Use either of $K$-NN or Naive Bayes to predict whether an automobile is a `chevrolet` or a `honda`.
-- Explain your choice of technique.
-- Report on your Kappa value.
+-   Use either of $K$-NN or Naive Bayes to predict whether an automobile is a `chevrolet` or a `honda`.
+-   Explain your choice of technique.
+-   Report on your Kappa value.
 
 ```{r classification}
-# Your code here
+auto2 = Auto %>%
+  mutate(name = tolower(name)) %>%
+  mutate(chevda = str_detect(name, c("chevy|chevrolet|honda")),
+         chevda = ifelse(chevda == TRUE, "is", "not"),
+         name = as.character(name))
+
+morewords = auto2 %>% 
+  unnest_tokens(word, name) %>% 
+  filter(str_detect(string = word, pattern = "[a-z+]")) %>%  # get rid weird non alphas
+  filter(str_length(word)>3) %>%  # get rid of strings shorter than 3 characters
+  group_by(word) %>% 
+  mutate(total=n()) %>% 
+  ungroup()
+
+wordsplot = morewords %>% 
+    filter(chevda=="is" | chevda=="not") %>% 
+    group_by(chevda, word) %>%
+    count() %>% 
+    group_by(chevda) %>% 
+    mutate(proportion = n / sum(n)) %>% 
+    pivot_wider(id_cols = word, names_from = chevda, values_from = proportion) %>% 
+    ggplot(aes(x = is, y = not, color = abs(is - not))) +
+    geom_abline(color = "gray40", lty = 2) +
+    geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+    geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+    scale_x_log10(labels = percent_format()) +
+    scale_y_log10(labels = percent_format()) +
+    scale_color_gradient(limits = c(0, 0.001), low = "darkslategray4", high = "gray75") +
+    theme(legend.position="none") +
+    labs(x = "chevda", y = "Not chevda", title = "Words")
+
+chevda = Auto %>%
+  mutate(chevda = str_detect(name, c("chevy|chevrolet|honda"))) %>%
+  mutate(fct_year = factor(year),
+         fct_cylinders = factor(cylinders),
+         chevda = factor(chevda),
+         origin = factor(origin)) %>%
+  mutate(chevelle = str_detect(name, "chevelle"),
+         landau = str_detect(name, "landau"),
+         auto = str_detect(name, "auto"),
+         wagon = str_detect(name, "wagon")) %>%
+  drop_na() %>%
+  select(-name, -year, -cylinders, -acceleration, -displacement)
+
+
+
+set.seed(5)
+thing = createDataPartition(chevda$chevda, p = 0.8, list = FALSE)
+train = chevda[thing, ]
+test = chevda[-thing, ]
+
+fit = train(chevda ~ .,
+             data = train, 
+             method = "knn",
+             tuneLength = 15,
+             metric = "Kappa",
+             trControl = trainControl(method = "cv", number = 10))
+print(confusionMatrix(predict(fit, test),factor(test$chevda)))
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: *Explain*
+> Here, I chose to use $K$-NN since I cannot assume variables such as cylinders, horsepower, and acceleration are independent, which is a necessary assumption for the use of Naive Bayes. The Kappa value found here was -0.0244, which indicates that this model is worse than random guessing and should be deleted from the system.
 
 # Binary Classification
 
-- Predict whether a car is a `honda`.
-- Use model weights.
-- Display and comment on an ROC curve.
+-   Predict whether a car is a `honda`.
+-   Use model weights.
+-   Display and comment on an ROC curve.
 
 ```{r binary classification}
-# Your code here
+honda = Auto %>%
+  mutate(name = as.character(tolower(name))) %>%
+  mutate(honda = str_detect(name, "honda")) %>%
+  mutate(honda = ifelse(honda == TRUE, "honda", "not")) %>%
+  mutate(fct_year = factor(year),
+         fct_cylinders = factor(cylinders),
+         honda = factor(honda),
+         origin = factor(origin)) %>%
+  drop_na() %>%
+  select(-name, -cylinders, -year)
+
+set.seed(5)
+newthing = createDataPartition(honda$honda, p = 0.8, list = FALSE)
+train = honda[newthing, ]
+test = honda[-newthing, ]
+
+
+weight_train = train %>% 
+  mutate(weights=if_else(honda=="honda",30,1))
+
+
+fit <- train(honda ~ .,
+             data = train, 
+             trControl = trainControl(method = "cv", number = 10),
+             method = "glm",
+             family = "binomial",
+             weights = weight_train$weights)
+
+prob <- predict(fit, newdata = test, type = "prob")[,2]
+myRoc <- roc(test$honda, prob)
+plot(myRoc)
+auc(myRoc)
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: *Explain*
+> The ROC curve measures sensitivity, which is the true positive rate, vs the specificity, which is the true negative rate. We can find the area underneath the curve to measure the performance of our model in this regard, with an AUC (area under the curve) value of 1 being a perfect model and an AUC value of 0.5 being one no better than random guessing. For the model made above, the AUC value for the ROC curve was 0.63, which indicates a model that is not that much better than random guessing.
 
 # Ethics
 
-- Based on your analysis, comment on the [Clean Air Act of 1970 and Ammendments of 1977](https://www.epa.gov/clean-air-act-overview/evolution-clean-air-act)
-- Discuss the civic reposibilities of data scientists for:
-    - Big Data and Human-Centered Computing
-    - Democratic Institutions
-    - Climate Change
-- Provide at least one statistical measure for each, such as a RMSE, Kappa value, or ROC curve.
+-   Based on your analysis, comment on the [Clean Air Act of 1970 and Amendments of 1977](https://www.epa.gov/clean-air-act-overview/evolution-clean-air-act)
+-   Discuss the civic responsibilities of data scientists for:
+    -   Big Data and Human-Centered Computing
+    -   Democratic Institutions
+    -   Climate Change
+-   Provide at least one statistical measure for each, such as a RMSE, Kappa value, or ROC curve.
 
-> <span style="color:red;font-weight:bold">TODO</span>: Big Data and Human-Centered Computing
+#### Big Data and Human-Centered Computing
+
+> In terms of measuring air quality impact of vehicles, one can look at the mpg of said vehicles. Higher mpg values will have vehicles be burning less fuel and thus have less harmful emissions. To see if these acts are effective in lowering emissions from vehicles from the years 1970 to 1982, we can simply make a fit a linear model to mpg vs year and see if the coefficient is negative.
 
 ```{r big data}
-# Your code here
+m3 = lm(mpg ~ year, data = Auto)
+summary(m3)
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: Democratic Institutions
+> Thankfully, car science progressed in those 13 years, with the simple model finding mpg and the year to be positively correlated, with mpg increasing by around 1.23 every year.
+
+#### Democratic Institutions
 
 ```{r democracy}
-# Your code here
+weightauto = Auto %>%
+  mutate(highweight = weight > mean(Auto$weight))
+
+list(
+  mean(filter(weightauto, highweight == TRUE)$mpg),
+  mean(filter(weightauto, highweight == FALSE)$mpg)
+)
 ```
 
-> <span style="color:red;font-weight:bold">TODO</span>: Climate Change
+> If you don't need a big car, buy a smaller car, since the mpg is probably better.
+
+#### Climate Change
 
 ```{r climate}
-# Your code here
+list(
+  mean(filter(Auto, cylinders == 4)$mpg),
+  mean(filter(Auto, cylinders == 6)$mpg),
+  mean(filter(Auto, cylinders == 8)$mpg)
+)
 ```
+
+> In conjunction with the weight of the car is also the engine. More compact engines with fewer cylinders will burn less fuel per mile, making them more efficient. Of course, this can't be taken by itself, since engines generate energy to make the vehicle move, and the weight of the vehicle is directly proportional to the kinetic energy of the vehicle, as seen in equation for kinetic energy: $$
+> K_e = \frac{1}{2}mv^2
+> $$
+So, production should shift not only to making more efficient engines, but also towards making lighter vehicles that take less energy to move.
